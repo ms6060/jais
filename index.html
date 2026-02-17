@@ -9,7 +9,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-  const firebaseConfig = {
+const firebaseConfig = {
   apiKey: "AIzaSyCBAhaBPdoLUx96puzKxnaRcPekaQdCgJY",
   authDomain: "jais-3334c.firebaseapp.com",
   databaseURL: "https://jais-3334c-default-rtdb.europe-west1.firebasedatabase.app",
@@ -228,6 +228,7 @@
   <button class="tab-btn" style="--tab-color:var(--c-beleucht)" onclick="switchTab('beleucht',this)">💡 Beleuchtung <span class="tab-count" id="cnt-beleucht">0</span></button>
   <button class="tab-btn" style="--tab-color:var(--c-notlicht)" onclick="switchTab('notlicht',this)">🚨 Notlicht <span class="tab-count" id="cnt-notlicht">0</span></button>
   <button class="tab-btn" style="--tab-color:var(--c-blitz)" onclick="switchTab('blitz',this)">⚡ Blitzschutz <span class="tab-count" id="cnt-blitz">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-tp)" onclick="switchTab('drittfirmen',this)">🏗️ Drittfirmen <span class="tab-count" id="cnt-drittfirmen">0</span></button>
 </div>
 
 <div class="main">
@@ -258,6 +259,35 @@
   <div class="tab-content" id="tab-blitz">
     <div class="section-header"><span class="section-accent" style="background:var(--c-blitz)"></span><h2>Blitzschutz &amp; Erdung</h2><button class="btn btn-sm" style="background:var(--c-blitz);color:#000" onclick="openAddPhaseModal('blitz')">+ Phase</button></div>
     <div id="phases-blitz"></div><div class="empty-state" id="empty-blitz" style="display:none"><div>⚡</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-drittfirmen">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-tp)"></span><h2>Drittfirmen – Anfragen &amp; Koordination</h2><button class="btn btn-sm" style="background:var(--c-tp);color:#fff" onclick="openAddTpModal()">+ Anfrage</button></div>
+    <div id="tp-list"></div>
+    <div class="empty-state" id="tp-empty" style="display:none"><div>🏗️</div>Keine Anfragen vorhanden.</div>
+  </div>
+</div>
+
+<!-- MODAL: Drittfirma -->
+<div class="modal-overlay" id="modal-tp">
+  <div class="modal">
+    <h3 id="modal-tp-title">Neue Anfrage <button onclick="closeModal('modal-tp')">×</button></h3>
+    <div class="add-form" style="margin-bottom:0">
+      <div class="add-form-row cols-2">
+        <div class="form-group"><label>Firma *</label><input type="text" id="tp-firm"></div>
+        <div class="form-group"><label>Ansprechperson</label><input type="text" id="tp-person"></div>
+      </div>
+      <div class="add-form-row cols-2">
+        <div class="form-group"><label>Priorität</label><select id="tp-prio"><option value="mittel">Mittel</option><option value="hoch">Hoch</option><option value="niedrig">Niedrig</option></select></div>
+        <div class="form-group"><label>Fällig bis</label><input type="date" id="tp-due"></div>
+      </div>
+      <div class="form-group"><label>Beschreibung / Anfrage *</label><textarea id="tp-request" rows="3"></textarea></div>
+      <div class="form-group"><label>Status</label><select id="tp-status"><option value="offen">Offen</option><option value="wartend">Wartend</option><option value="erledigt">Erledigt</option></select></div>
+      <div class="form-group"><label>Antwort / Notizen</label><textarea id="tp-answer" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-tp')">Abbrechen</button>
+      <button class="btn btn-primary" id="modal-tp-save-btn" onclick="saveTp()">Speichern</button>
+    </div>
   </div>
 </div>
 
@@ -487,6 +517,8 @@ function switchTab(tab, btn) {
   const m = META[tab] || {};
   document.getElementById('header-subtitle').textContent = m.label || '';
   document.getElementById('main-header').style.borderBottomColor = m.color || 'var(--accent)';
+  
+  if (tab === 'drittfirmen') renderTp();
 }
 
 function updateStats() {
@@ -681,6 +713,119 @@ function quickAddTask(e, mod, phId, input) {
     save(); 
     renderModule(mod); 
   }
+}
+
+// ─── DRITTFIRMEN ───
+let _editTpId = null;
+
+function renderTp() {
+  const list = document.getElementById('tp-list');
+  const empty = document.getElementById('tp-empty');
+  if (!list) return;
+  
+  if (!data || !data.thirdParty) data.thirdParty = [];
+  const items = data.thirdParty;
+  
+  if (!items.length) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  
+  if (empty) empty.style.display = 'none';
+  
+  list.innerHTML = items.map(tp => {
+    const prioColors = {hoch:'#e74c3c',mittel:'var(--accent)',niedrig:'#2ecc71'};
+    const statusColors = {offen:'var(--accent)',wartend:'#3498db',erledigt:'var(--success)'};
+    const statusLabels = {offen:'Offen',wartend:'Wartend',erledigt:'Erledigt'};
+    
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px">
+        <div style="flex:1">
+          <div style="font-family:var(--head);font-size:15px;font-weight:700;color:var(--text-bright);margin-bottom:4px">${tp.firm}${tp.person?` · ${tp.person}`:''}</div>
+          <div style="font-size:13px;color:var(--text);line-height:1.5">${tp.request}</div>
+        </div>
+        <div style="display:flex;gap:4px;margin-left:10px">
+          <button class="btn-icon" onclick="editTp('${tp.id}')">✏️</button>
+          <button class="btn-icon del" onclick="deleteTp('${tp.id}')">🗑</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,0.08);color:${prioColors[tp.prio]};border:1px solid ${prioColors[tp.prio]}">${tp.prio.toUpperCase()}</span>
+        <span style="font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:3px;background:${statusColors[tp.status]};color:#000">${statusLabels[tp.status]}</span>
+        ${tp.due?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">📅 ${fmtDate(tp.due)}</span>`:''}
+      </div>
+      ${tp.answer?`<div style="margin-top:10px;padding:8px;background:var(--bg);border-radius:4px;font-size:12px;color:var(--text-dim)">💬 ${tp.answer}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function openAddTpModal() {
+  _editTpId = null;
+  document.getElementById('modal-tp-title').innerHTML = `Neue Anfrage <button onclick="closeModal('modal-tp')">×</button>`;
+  document.getElementById('modal-tp-save-btn').textContent = 'Speichern';
+  ['tp-firm','tp-person','tp-request','tp-answer'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('tp-prio').value = 'mittel';
+  document.getElementById('tp-status').value = 'offen';
+  document.getElementById('tp-due').value = '';
+  openModal('modal-tp');
+}
+
+function editTp(id) {
+  const tp = (data.thirdParty || []).find(t => t.id === id);
+  if (!tp) return;
+  
+  _editTpId = id;
+  document.getElementById('modal-tp-title').innerHTML = `Anfrage bearbeiten <button onclick="closeModal('modal-tp')">×</button>`;
+  document.getElementById('modal-tp-save-btn').textContent = 'Aktualisieren';
+  document.getElementById('tp-firm').value = tp.firm || '';
+  document.getElementById('tp-person').value = tp.person || '';
+  document.getElementById('tp-request').value = tp.request || '';
+  document.getElementById('tp-answer').value = tp.answer || '';
+  document.getElementById('tp-prio').value = tp.prio || 'mittel';
+  document.getElementById('tp-status').value = tp.status || 'offen';
+  document.getElementById('tp-due').value = tp.due || '';
+  openModal('modal-tp');
+}
+
+function saveTp() {
+  const firm = document.getElementById('tp-firm').value.trim();
+  const request = document.getElementById('tp-request').value.trim();
+  
+  if (!firm) { document.getElementById('tp-firm').focus(); return; }
+  if (!request) { document.getElementById('tp-request').focus(); return; }
+  
+  const tpData = {
+    firm,
+    person: document.getElementById('tp-person').value.trim(),
+    request,
+    answer: document.getElementById('tp-answer').value.trim(),
+    prio: document.getElementById('tp-prio').value,
+    status: document.getElementById('tp-status').value,
+    due: document.getElementById('tp-due').value,
+    created: new Date().toISOString()
+  };
+  
+  if (!data.thirdParty) data.thirdParty = [];
+  
+  if (_editTpId) {
+    const idx = data.thirdParty.findIndex(t => t.id === _editTpId);
+    if (idx >= 0) data.thirdParty[idx] = { id: _editTpId, ...tpData };
+  } else {
+    data.thirdParty.push({ id: getUniqueId('tp'), ...tpData });
+  }
+  
+  save();
+  closeModal('modal-tp');
+  renderTp();
+}
+
+function deleteTp(id) {
+  if (!confirm('Anfrage löschen?')) return;
+  if (!data || !data.thirdParty) return;
+  data.thirdParty = data.thirdParty.filter(t => t.id !== id);
+  save();
+  renderTp();
 }
 
 function showShareUrl() {

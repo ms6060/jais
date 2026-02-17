@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>e.viSio Baustellenverwaltung</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+  apiKey: "AIzaSyCBAhaBPdoLUx96puzKxnaRcPekaQdCgJY",
+  authDomain: "jais-3334c.firebaseapp.com",
+  databaseURL: "https://jais-3334c-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "jais-3334c",
+  storageBucket: "jais-3334c.firebasestorage.app",
+  messagingSenderId: "761547258344",
+  appId: "1:761547258344:web:9203714fba0ec118e40c5d"
+};
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  
+  function getBaustelleKey() {
+    let key = new URLSearchParams(window.location.search).get('key');
+    if (!key) {
+      key = localStorage.getItem('bv_key');
+      if (!key) {
+        key = 'bv_' + Math.random().toString(36).slice(2, 12);
+        localStorage.setItem('bv_key', key);
+      }
+      const url = new URL(window.location);
+      url.searchParams.set('key', key);
+      window.history.replaceState({}, '', url);
+    } else {
+      localStorage.setItem('bv_key', key);
+    }
+    return key;
+  }
+
+  const BKEY = getBaustelleKey();
+  const dbRef = ref(db, 'baustellen/' + BKEY);
+
+  function setSyncStatus(status) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    const cfg = {
+      syncing: { text:'⟳ Speichern…', color:'var(--text-dim)' },
+      ok:      { text:'☁ Gespeichert', color:'var(--success)' },
+      error:   { text:'✕ Fehler', color:'var(--danger)' },
+      offline: { text:'◌ Offline', color:'var(--accent)' },
+    };
+    const c = cfg[status] || cfg.ok;
+    el.textContent = c.text;
+    el.style.color = c.color;
+  }
+
+  window.fbSave = function(dataObj, siteName) {
+    setSyncStatus('syncing');
+    set(dbRef, { data: dataObj, name: siteName })
+      .then(() => setSyncStatus('ok'))
+      .catch(() => setSyncStatus('error'));
+  };
+
+  let firstLoad = true;
+  onValue(dbRef, snapshot => {
+    const val = snapshot.val();
+    if (val && val.data) {
+      if (firstLoad) {
+        firstLoad = false;
+        window.initAppWithData(val.data, val.name || 'Meine Baustelle');
+      } else {
+        window.applyRemoteData(val.data, val.name || 'Meine Baustelle');
+      }
+    } else {
+      firstLoad = false;
+      window.initAppWithData(null, 'Meine Baustelle');
+    }
+    setSyncStatus('ok');
+  }, error => {
+    setSyncStatus('error');
+    console.error('Firebase-Fehler:', error);
+    firstLoad = false;
+    window.initAppWithData(null, 'Meine Baustelle');
+  });
+
+  window.getShareUrl = () => window.location.href;
+</script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #181c26; --surface2: #1e2333; --border: #2a3045;
+    --accent: #f0a500; --accent2: #3a8fc7; --danger: #c0392b; --success: #27ae60;
+    --text: #e8eaf0; --text-dim: #7a8299; --text-bright: #fff;
+    --mono: 'DM Mono', monospace; --head: 'Barlow Condensed', sans-serif; --body: 'Barlow', sans-serif; --radius: 6px;
+    --c-elektro: #f0a500; --c-brand: #e74c3c; --c-schlies: #9b59b6; --c-pv: #27ae60; 
+    --c-beleucht: #e8a838; --c-notlicht: #ff6b6b; --c-blitz: #ffd700; --c-tp: #3a8fc7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--body); font-size: 14px; min-height: 100vh; }
+
+  header { background: var(--surface); border-bottom: 3px solid var(--accent); padding: 11px 20px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+  .header-logo { height: 42px; width: auto; }
+  .header-title { flex: 1; }
+  .site-name { font-family: var(--head); font-size: 18px; font-weight: 700; color: var(--text-bright); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all 0.15s; display: inline-block; }
+  .site-name:hover { background: var(--surface2); }
+  .site-name-input { font-family: var(--head); font-size: 18px; font-weight: 700; background: var(--bg); border: 2px solid var(--accent); border-radius: 4px; padding: 4px 8px; color: var(--text-bright); outline: none; letter-spacing: 0.06em; text-transform: uppercase; }
+  header p { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 0.08em; margin-top: 2px; }
+  .header-stats { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .stat-badge { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; text-align: center; }
+  .stat-badge .num { font-family: var(--mono); font-size: 16px; font-weight: 500; color: var(--accent); display: block; line-height: 1.1; }
+  .stat-badge .lbl { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .tabs { display: flex; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { background: none; border: none; border-bottom: 3px solid transparent; padding: 10px 14px; color: var(--text-dim); font-family: var(--head); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; transition: all 0.18s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--tab-color); border-bottom-color: var(--tab-color); }
+  .tab-btn .tab-count { font-family: var(--mono); font-size: 10px; font-weight: 500; border-radius: 10px; padding: 1px 6px; min-width: 18px; text-align: center; }
+  .tab-btn.active .tab-count { background: var(--tab-color); color: #000; }
+  .tab-btn:not(.active) .tab-count { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .main { padding: 20px 20px; max-width: 1100px; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .section-header h2 { font-family: var(--head); font-size: 16px; font-weight: 700; color: var(--text-bright); letter-spacing: 0.05em; text-transform: uppercase; flex: 1; }
+  .section-accent { display: inline-block; width: 4px; height: 18px; border-radius: 2px; flex-shrink: 0; }
+
+  .btn { border: none; border-radius: var(--radius); padding: 7px 14px; font-family: var(--head); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { filter: brightness(1.12); }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 4px 9px; font-size: 11px; }
+
+  .phase-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 11px; overflow: hidden; }
+  .phase-header { display: flex; align-items: center; gap: 8px; padding: 9px 13px; background: var(--surface2); cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); }
+  .phase-header:hover { background: #22273a; }
+  .phase-arrow { font-family: var(--mono); font-size: 10px; color: var(--text-dim); transition: transform 0.2s; width: 11px; flex-shrink: 0; }
+  .phase-block.open .phase-arrow { transform: rotate(90deg); }
+  .phase-title { font-family: var(--head); font-size: 13px; font-weight: 700; color: var(--text-bright); letter-spacing: 0.05em; text-transform: uppercase; flex: 1; }
+  .phase-progress { display: flex; align-items: center; gap: 6px; }
+  .phase-bar { width: 75px; height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+  .phase-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+  .phase-pct { font-family: var(--mono); font-size: 10px; color: var(--text-dim); width: 28px; text-align: right; }
+  .phase-body { display: none; }
+  .phase-block.open .phase-body { display: block; }
+
+  .task-item { display: flex; align-items: flex-start; gap: 9px; padding: 8px 13px; border-bottom: 1px solid var(--border); transition: background 0.12s; }
+  .task-item:last-child { border-bottom: none; }
+  .task-item:hover { background: rgba(240,165,0,0.035); }
+  .task-item.done .task-text { color: var(--text-dim); text-decoration: line-through; }
+  .task-item.done .task-prio { opacity: 0.35; }
+  .task-checkbox { appearance: none; width: 16px; height: 16px; border: 2px solid var(--border); border-radius: 3px; cursor: pointer; margin-top: 1px; flex-shrink: 0; transition: all 0.15s; background: transparent; }
+  .task-checkbox:checked { background: var(--success); border-color: var(--success); background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4l3 3 5-6' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: center; background-size: 9px; }
+  .task-info { flex: 1; min-width: 0; }
+  .task-text { font-size: 13px; color: var(--text); line-height: 1.4; }
+  .task-meta { display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; align-items: center; }
+  .task-prio { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 500; }
+  .prio-hoch { background: rgba(192,57,43,0.18); color: #e74c3c; border: 1px solid rgba(192,57,43,0.3); }
+  .prio-mittel { background: rgba(240,165,0,0.15); color: var(--accent); border: 1px solid rgba(240,165,0,0.3); }
+  .prio-niedrig { background: rgba(39,174,96,0.12); color: #2ecc71; border: 1px solid rgba(39,174,96,0.25); }
+  .task-date { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  .task-note-display { font-size: 11px; color: var(--text-dim); font-style: italic; margin-top: 2px; }
+  .task-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+  .task-item:hover .task-actions { opacity: 1; }
+  .btn-icon { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 3px 4px; border-radius: 3px; font-size: 12px; transition: all 0.12s; }
+  .btn-icon:hover { background: var(--surface2); color: var(--accent); }
+  .btn-icon.del:hover { color: var(--danger); }
+
+  .add-task-row { padding: 6px 13px; display: flex; gap: 6px; border-top: 1px solid var(--border); background: var(--bg); }
+  .add-task-row input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px; color: var(--text); font-size: 12px; font-family: var(--body); outline: none; }
+  .add-task-row input:focus { border-color: var(--accent); }
+
+  .empty-state { text-align: center; padding: 36px 24px; color: var(--text-dim); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; }
+  .empty-state div { font-size: 28px; margin-bottom: 8px; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.72); z-index: 200; justify-content: center; align-items: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-family: var(--head); font-size: 15px; font-weight: 700; color: var(--text-bright); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .modal h3 button { background: none; border: none; color: var(--text-dim); font-size: 20px; cursor: pointer; }
+  .modal h3 button:hover { color: var(--text); }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+  .add-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 15px; margin-bottom: 14px; display: grid; gap: 9px; }
+  .add-form-row { display: grid; gap: 9px; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 3px; }
+  .form-group label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+  .form-group input, .form-group select, .form-group textarea { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 9px; color: var(--text); font-family: var(--body); font-size: 13px; outline: none; transition: border-color 0.15s; }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
+  .form-group textarea { resize: vertical; min-height: 48px; }
+  .form-group select option { background: var(--surface); }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header id="main-header">
+  <img src="e_visio_klein.png" alt="e.viSio Logo" class="header-logo" onerror="this.style.display='none'">
+  <div class="header-title">
+    <div class="site-name" id="site-name" onclick="editSiteName()">Meine Baustelle</div>
+    <p id="header-subtitle">Elektroinstallation</p>
+  </div>
+  <div class="header-stats">
+    <div class="stat-badge"><span class="num" id="stat-done">0</span><span class="lbl">Erledigt</span></div>
+    <div class="stat-badge"><span class="num" id="stat-open">0</span><span class="lbl">Offen</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="sync-status" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);min-width:90px;text-align:right">◌ Verbinden…</span>
+      <button class="btn btn-ghost btn-sm" onclick="showShareUrl()" title="Link zum Teilen">🔗</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportData()" title="Backup erstellen">💾</button>
+    </div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" style="--tab-color:var(--c-elektro)" onclick="switchTab('elektro',this)">⚡ Elektro <span class="tab-count" id="cnt-elektro">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-brand)" onclick="switchTab('brand',this)">🔴 Brandmelde <span class="tab-count" id="cnt-brand">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-schlies)" onclick="switchTab('schlies',this)">🔒 Schliess/Alarm <span class="tab-count" id="cnt-schlies">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-pv)" onclick="switchTab('pv',this)">☀️ PV <span class="tab-count" id="cnt-pv">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-beleucht)" onclick="switchTab('beleucht',this)">💡 Beleuchtung <span class="tab-count" id="cnt-beleucht">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-notlicht)" onclick="switchTab('notlicht',this)">🚨 Notlicht <span class="tab-count" id="cnt-notlicht">0</span></button>
+  <button class="tab-btn" style="--tab-color:var(--c-blitz)" onclick="switchTab('blitz',this)">⚡ Blitzschutz <span class="tab-count" id="cnt-blitz">0</span></button>
+</div>
+
+<div class="main">
+  <div class="tab-content active" id="tab-elektro">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-elektro)"></span><h2>Elektroinstallation</h2><button class="btn btn-sm" style="background:var(--c-elektro);color:#000" onclick="openAddPhaseModal('elektro')">+ Phase</button></div>
+    <div id="phases-elektro"></div><div class="empty-state" id="empty-elektro" style="display:none"><div>🔌</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-brand">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-brand)"></span><h2>Brandmeldeanlage</h2><button class="btn btn-sm" style="background:var(--c-brand);color:#fff" onclick="openAddPhaseModal('brand')">+ Phase</button></div>
+    <div id="phases-brand"></div><div class="empty-state" id="empty-brand" style="display:none"><div>🔴</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-schlies">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-schlies)"></span><h2>Schliess- &amp; Alarmanlage</h2><button class="btn btn-sm" style="background:var(--c-schlies);color:#fff" onclick="openAddPhaseModal('schlies')">+ Phase</button></div>
+    <div id="phases-schlies"></div><div class="empty-state" id="empty-schlies" style="display:none"><div>🔒</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-pv">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-pv)"></span><h2>PV-Anlage</h2><button class="btn btn-sm" style="background:var(--c-pv);color:#fff" onclick="openAddPhaseModal('pv')">+ Phase</button></div>
+    <div id="phases-pv"></div><div class="empty-state" id="empty-pv" style="display:none"><div>☀️</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-beleucht">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-beleucht)"></span><h2>Beleuchtung</h2><button class="btn btn-sm" style="background:var(--c-beleucht);color:#000" onclick="openAddPhaseModal('beleucht')">+ Phase</button></div>
+    <div id="phases-beleucht"></div><div class="empty-state" id="empty-beleucht" style="display:none"><div>💡</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-notlicht">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-notlicht)"></span><h2>Notbeleuchtung</h2><button class="btn btn-sm" style="background:var(--c-notlicht);color:#fff" onclick="openAddPhaseModal('notlicht')">+ Phase</button></div>
+    <div id="phases-notlicht"></div><div class="empty-state" id="empty-notlicht" style="display:none"><div>🚨</div>Noch keine Phasen.</div>
+  </div>
+  <div class="tab-content" id="tab-blitz">
+    <div class="section-header"><span class="section-accent" style="background:var(--c-blitz)"></span><h2>Blitzschutz &amp; Erdung</h2><button class="btn btn-sm" style="background:var(--c-blitz);color:#000" onclick="openAddPhaseModal('blitz')">+ Phase</button></div>
+    <div id="phases-blitz"></div><div class="empty-state" id="empty-blitz" style="display:none"><div>⚡</div>Noch keine Phasen.</div>
+  </div>
+</div>
+
+<!-- MODAL: Share -->
+<div class="modal-overlay" id="modal-share">
+  <div class="modal" style="max-width:450px">
+    <h3>🔗 Link teilen <button onclick="closeModal('modal-share')">×</button></h3>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px;line-height:1.5">Öffne diesen Link auf einem anderen Gerät — alle Änderungen werden synchronisiert.</p>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="share-url-input" readonly style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:11px">
+      <button class="btn btn-primary btn-sm" onclick="copyShareUrl()">Kopieren</button>
+    </div>
+    <p id="copy-confirm" style="font-family:var(--mono);font-size:11px;color:var(--success);margin-top:7px;display:none">✓ Link kopiert!</p>
+  </div>
+</div>
+
+<!-- MODAL: Phase -->
+<div class="modal-overlay" id="modal-phase">
+  <div class="modal">
+    <h3 id="modal-phase-title">Neue Phase <button onclick="closeModal('modal-phase')">×</button></h3>
+    <div class="add-form" style="margin-bottom:0">
+      <div class="add-form-row cols-2">
+        <div class="form-group"><label>Bezeichnung *</label><input type="text" id="phase-name"></div>
+        <div class="form-group"><label>Bereich</label><input type="text" id="phase-area"></div>
+      </div>
+      <div class="form-group"><label>Beschreibung</label><textarea id="phase-desc"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-phase')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="addPhase()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Task -->
+<div class="modal-overlay" id="modal-task">
+  <div class="modal">
+    <h3 id="modal-task-title">Aufgabe <button onclick="closeModal('modal-task')">×</button></h3>
+    <div class="add-form" style="margin-bottom:0">
+      <div class="form-group"><label>Aufgabe *</label><input type="text" id="task-text"></div>
+      <div class="add-form-row cols-3">
+        <div class="form-group"><label>Priorität</label><select id="task-prio"><option value="mittel">Mittel</option><option value="hoch">Hoch</option><option value="niedrig">Niedrig</option></select></div>
+        <div class="form-group"><label>Fällig</label><input type="date" id="task-date"></div>
+        <div class="form-group"><label>Person</label><input type="text" id="task-person"></div>
+      </div>
+      <div class="form-group"><label>Notiz</label><textarea id="task-note"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-task')">Abbrechen</button>
+      <button class="btn btn-primary" id="modal-task-save-btn" onclick="addTask()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODULES = ['elektro','brand','schlies','pv','beleucht','notlicht','blitz'];
+const META = {
+  elektro:  {label:'Elektroinstallation',icon:'⚡',color:'var(--c-elektro)'},
+  brand:    {label:'Brandmeldeanlage',icon:'🔴',color:'var(--c-brand)'},
+  schlies:  {label:'Schliess- & Alarmanlage',icon:'🔒',color:'var(--c-schlies)'},
+  pv:       {label:'PV-Anlage',icon:'☀️',color:'var(--c-pv)'},
+  beleucht: {label:'Beleuchtung',icon:'💡',color:'var(--c-beleucht)'},
+  notlicht: {label:'Notbeleuchtung',icon:'🚨',color:'var(--c-notlicht)'},
+  blitz:    {label:'Blitzschutz & Erdung',icon:'⚡',color:'var(--c-blitz)'},
+};
+
+function mkTask(text,prio='mittel',note=''){
+  _idCounter++;
+  return{id:'t'+_idCounter,text,prio,date:'',person:'',note,done:false};
+}
+function mkPhase(id,name,area,desc,open,tasks){return{id,name,area,desc,_open:open,tasks};}
+
+function defaultData() {
+  return {
+    phases: {
+      elektro: [mkPhase('pe1','Rohinstallation','Gesamt','Leerrohre, UP-Dosen',true,[mkTask('Leerrohre EG','hoch'),mkTask('UP-Dosen EG','mittel')])],
+      brand: [],
+      schlies: [],
+      pv: [],
+      beleucht: [],
+      notlicht: [
+        mkPhase('pn1','Planung & Konzept','Gesamt','Notbeleuchtung SN EN 1838',true,[
+          mkTask('Notbeleuchtungskonzept erstellen (SN EN 1838)','hoch'),
+          mkTask('Flucht- und Rettungswege definieren','hoch'),
+          mkTask('Anzahl und Position Notleuchten festlegen','mittel'),
+          mkTask('Leuchtdauer bestimmen (1h / 3h)','mittel'),
+        ]),
+        mkPhase('pn2','Installation','Gesamt','Notleuchten, Zentrale',true,[
+          mkTask('Notleuchten montieren (Rettungszeichen)','hoch'),
+          mkTask('Sicherheitsleuchten Fluchtwege','hoch'),
+          mkTask('Zentralbatterie installieren','mittel','Zentral oder Einzelbatterie'),
+          mkTask('Kabelverlegung Notlicht','mittel'),
+        ]),
+        mkPhase('pn3','Prüfung & Abnahme','','Tests, Protokolle',false,[
+          mkTask('Funktionstest 1h alle Leuchten','hoch'),
+          mkTask('Funktionstest 3h (falls gefordert)','hoch'),
+          mkTask('Prüfprotokoll SN EN 62034','hoch'),
+          mkTask('Wartungsvertrag','niedrig'),
+        ]),
+      ],
+      blitz: [
+        mkPhase('pb1','Planung & Konzept','Gesamt','Blitzschutz SN EN 62305',true,[
+          mkTask('Risikoanalyse (SN EN 62305-2)','hoch','Blitzschutzzonen'),
+          mkTask('Blitzschutzklasse bestimmen (I-IV)','hoch'),
+          mkTask('Fangeinrichtung planen','mittel'),
+          mkTask('Erdungskonzept erstellen','hoch'),
+        ]),
+        mkPhase('pb2','Äusserer Blitzschutz','Dach','Fangeinrichtung, Ableitungen',true,[
+          mkTask('Fangeinrichtung montieren','hoch','Stangen/Seile'),
+          mkTask('Ableitungen installieren (min. 2)','hoch'),
+          mkTask('Fangleitungen verbinden (PA)','mittel'),
+          mkTask('Prüfklemmen installieren','niedrig'),
+        ]),
+        mkPhase('pb3','Erdungsanlage','Fundament','Erder verlegen',true,[
+          mkTask('Fundamenterder verlegen','hoch','Fe/Zn 10mm vor Betonieren'),
+          mkTask('Ringerder (falls nötig)','mittel','Min. 0.5m Tiefe'),
+          mkTask('Erdungsanlage verbinden','hoch'),
+          mkTask('Erdungswiderstand messen','hoch','Ziel: <10 Ohm'),
+        ]),
+        mkPhase('pb4','Innerer Blitzschutz','Verteilung','SPD Typ 1/2/3',true,[
+          mkTask('SPD Typ 1 Hauptverteilung','hoch','Blitzstromableiter'),
+          mkTask('SPD Typ 2 Unterverteilungen','mittel'),
+          mkTask('Potentialausgleich montieren','hoch'),
+          mkTask('Alle Installationen anschliessen (PA)','hoch','Wasser, Gas, Antennen'),
+        ]),
+        mkPhase('pb5','Prüfung & Abnahme','','Messungen',false,[
+          mkTask('Durchgangsmessung Ableitungen','hoch'),
+          mkTask('Erdungswiderstand messen','hoch'),
+          mkTask('Abnahmeprotokoll SN EN 62305','mittel'),
+          mkTask('Wartungsvertrag (jährlich)','niedrig'),
+        ]),
+      ],
+    },
+    thirdParty: []
+  };
+}
+
+let data = null;
+let currentSiteName = 'Meine Baustelle';
+let currentModule = 'elektro';
+let _addTaskPhaseId = null;
+let _editTaskId = null;
+let _saveTimer = null;
+let _idCounter = Date.now(); // Startwert für eindeutige IDs
+
+function getUniqueId(prefix) {
+  return prefix + (_idCounter++);
+}
+
+window.initAppWithData = function(fbData, fbName) {
+  data = fbData || defaultData();
+  currentSiteName = fbName || 'Meine Baustelle';
+  
+  // MIGRATION: Sicherstellen dass alle Module existieren
+  if (!data.phases) data.phases = {};
+  MODULES.forEach(mod => {
+    if (!data.phases[mod]) {
+      // Neue Module mit leeren Arrays initialisieren
+      data.phases[mod] = [];
+    }
+  });
+  if (!data.thirdParty) data.thirdParty = [];
+  
+  document.getElementById('site-name').textContent = currentSiteName;
+  MODULES.forEach(m => renderModule(m));
+  updateStats();
+  
+  // Migrierte Daten sofort speichern
+  if (fbData) save();
+};
+
+window.applyRemoteData = function(fbData, fbName) {
+  if (!fbData) return;
+  data = fbData;
+  currentSiteName = fbName || currentSiteName;
+  
+  // MIGRATION: Auch hier sicherstellen
+  if (!data.phases) data.phases = {};
+  MODULES.forEach(mod => {
+    if (!data.phases[mod]) data.phases[mod] = [];
+  });
+  
+  document.getElementById('site-name').textContent = currentSiteName;
+  MODULES.forEach(m => renderModule(m));
+  updateStats();
+};
+
+function save() {
+  if(!data) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    if(window.fbSave) window.fbSave(data, currentSiteName);
+  }, 800);
+  updateStats();
+}
+
+function editSiteName() {
+  const el = document.getElementById('site-name');
+  const current = el.textContent;
+  const input = document.createElement('input');
+  input.className = 'site-name-input';
+  input.value = current;
+  input.onblur = function() {
+    const newName = this.value.trim() || 'Meine Baustelle';
+    el.textContent = newName;
+    currentSiteName = newName;
+    save();
+    el.style.display = '';
+    this.remove();
+  };
+  input.onkeydown = function(e) {
+    if(e.key==='Enter') this.blur();
+    if(e.key==='Escape') { el.textContent = current; el.style.display = ''; this.remove(); }
+  };
+  el.style.display = 'none';
+  el.parentNode.insertBefore(input, el);
+  input.focus();
+  input.select();
+}
+
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  btn.classList.add('active');
+  currentModule = tab;
+  const m = META[tab] || {};
+  document.getElementById('header-subtitle').textContent = m.label || '';
+  document.getElementById('main-header').style.borderBottomColor = m.color || 'var(--accent)';
+}
+
+function updateStats() {
+  if (!data || !data.phases) return;
+  
+  let done=0, open=0;
+  MODULES.forEach(m => {
+    const phases = data.phases[m] || [];
+    let mOpen = 0;
+    phases.forEach(p => {
+      if (!p.tasks) p.tasks = [];
+      p.tasks.forEach(t => { t.done ? done++ : (open++, mOpen++); });
+    });
+    const el = document.getElementById('cnt-'+m);
+    if (el) el.textContent = mOpen;
+  });
+  document.getElementById('stat-done').textContent = done;
+  document.getElementById('stat-open').textContent = open;
+}
+
+function renderModule(mod) {
+  const c = document.getElementById('phases-'+mod);
+  const empty = document.getElementById('empty-'+mod);
+  if(!c) return;
+  
+  // Defensive: Sicherstellen dass das Modul existiert
+  if (!data || !data.phases) {
+    if(empty) empty.style.display = '';
+    c.innerHTML = '';
+    return;
+  }
+  if (!data.phases[mod]) data.phases[mod] = [];
+  
+  const phases = data.phases[mod];
+  if (!phases.length) { c.innerHTML=''; if(empty) empty.style.display=''; return; }
+  if(empty) empty.style.display = 'none';
+  const color = META[mod]?.color || 'var(--accent)';
+  c.innerHTML = phases.map(ph => {
+    const total = ph.tasks?.length || 0;
+    const done = ph.tasks?.filter(t=>t.done).length || 0;
+    const pct = total ? Math.round(done/total*100) : 0;
+    return `<div class="phase-block ${ph._open?'open':''}" id="phase-${ph.id}">
+      <div class="phase-header" onclick="togglePhase('${mod}','${ph.id}')">
+        <span class="phase-arrow">▶</span>
+        <div class="phase-title">${ph.name}${ph.area?` <span style="font-weight:400;font-size:10px;color:var(--text-dim)">${ph.area}</span>`:''}</div>
+        <div class="phase-progress">
+          <div class="phase-bar"><div class="phase-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+          <span class="phase-pct">${pct}%</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:4px">${done}/${total}</span>
+        </div>
+        <button class="btn-icon" style="opacity:1;margin-left:5px" onclick="event.stopPropagation();openAddTaskModal('${mod}','${ph.id}')">＋</button>
+        <button class="btn-icon del" style="opacity:1" onclick="event.stopPropagation();deletePhase('${mod}','${ph.id}')">🗑</button>
+      </div>
+      <div class="phase-body">
+        ${ph.desc?`<div style="padding:6px 13px 3px;font-size:11px;color:var(--text-dim);font-style:italic;border-bottom:1px solid var(--border)">${ph.desc}</div>`:''}
+        ${!ph.tasks || !ph.tasks.length?'<div style="padding:12px;color:var(--text-dim);font-size:12px;text-align:center">Keine Aufgaben</div>':''}
+        ${(ph.tasks||[]).map(t=>taskHtml(t,mod,ph.id)).join('')}
+        <div class="add-task-row">
+          <input type="text" placeholder="＋ Aufgabe (Enter)…" onkeydown="quickAddTask(event,'${mod}','${ph.id}',this)">
+          <button class="btn btn-ghost btn-sm" onclick="openAddTaskModal('${mod}','${ph.id}')">Detail</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function taskHtml(t, mod, phId) {
+  const pl = {hoch:'Hoch',mittel:'Mittel',niedrig:'Niedrig'}[t.prio]||t.prio;
+  
+  return `<div class="task-item ${t.done?'done':''}" id="task-${t.id}">
+    <input type="checkbox" class="task-checkbox" ${t.done?'checked':''} onchange="toggleTask('${mod}','${phId}','${t.id}',this.checked)">
+    <div class="task-info">
+      <div class="task-text">${t.text}</div>
+      <div class="task-meta">
+        <span class="task-prio prio-${t.prio}">${pl}</span>
+        ${t.date?`<span class="task-date">📅 ${fmtDate(t.date)}</span>`:''}
+        ${t.person?`<span class="task-date">👤 ${t.person}</span>`:''}
+      </div>
+      ${t.note?`<div class="task-note-display">💬 ${t.note}</div>`:''}
+    </div>
+    <div class="task-actions">
+      <button class="btn-icon" onclick="editTask('${mod}','${phId}','${t.id}')">✏️</button>
+      <button class="btn-icon del" onclick="deleteTask('${mod}','${phId}','${t.id}')">🗑</button>
+    </div>
+  </div>`;
+}
+
+function togglePhase(mod, id) {
+  const el = document.getElementById('phase-'+id);
+  el.classList.toggle('open');
+  const p = (data.phases[mod]||[]).find(p=>p.id===id);
+  if (p) { p._open = el.classList.contains('open'); save(); }
+}
+
+function openAddPhaseModal(mod) {
+  currentModule = mod;
+  ['phase-name','phase-area','phase-desc'].forEach(id=>document.getElementById(id).value='');
+  const m = META[mod];
+  document.getElementById('modal-phase-title').innerHTML = `Neue Phase – ${m?.icon||''} ${m?.label||mod} <button onclick="closeModal('modal-phase')">×</button>`;
+  openModal('modal-phase');
+}
+
+function addPhase() {
+  const name = document.getElementById('phase-name').value.trim();
+  if (!name) { document.getElementById('phase-name').focus(); return; }
+  
+  // Sicherstellen dass data und phases existieren
+  if (!data) data = defaultData();
+  if (!data.phases) data.phases = {};
+  if (!data.phases[currentModule]) data.phases[currentModule] = [];
+  
+  data.phases[currentModule].push({ 
+    id: getUniqueId('p'), 
+    name, 
+    _open:true, 
+    area:document.getElementById('phase-area').value.trim(), 
+    desc:document.getElementById('phase-desc').value.trim(), 
+    tasks:[] 
+  });
+  save(); 
+  closeModal('modal-phase'); 
+  renderModule(currentModule);
+}
+
+function deletePhase(mod, id) {
+  if (!confirm('Phase löschen?')) return;
+  if (!data || !data.phases || !data.phases[mod]) return;
+  data.phases[mod] = data.phases[mod].filter(p=>p.id!==id);
+  save(); renderModule(mod);
+}
+
+function toggleTask(mod, phId, tId, val) {
+  const ph = (data.phases[mod]||[]).find(p=>p.id===phId);
+  const t = ph?.tasks.find(t=>t.id===tId);
+  if (t) { t.done=val; save(); renderModule(mod); }
+}
+
+function deleteTask(mod, phId, tId) {
+  const ph = (data.phases[mod]||[]).find(p=>p.id===phId);
+  if (ph) { ph.tasks=ph.tasks.filter(t=>t.id!==tId); save(); renderModule(mod); }
+}
+
+function openAddTaskModal(mod, phId) {
+  currentModule=mod; _addTaskPhaseId=phId; _editTaskId=null;
+  document.getElementById('modal-task-title').innerHTML = `Aufgabe <button onclick="closeModal('modal-task')">×</button>`;
+  document.getElementById('modal-task-save-btn').textContent = 'Speichern';
+  ['task-text','task-date','task-person','task-note'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('task-prio').value='mittel';
+  openModal('modal-task');
+}
+
+function editTask(mod, phId, tId) {
+  const ph = (data.phases[mod]||[]).find(p=>p.id===phId);
+  const t = ph?.tasks.find(t=>t.id===tId);
+  if (!t) return;
+  currentModule=mod; _addTaskPhaseId=phId; _editTaskId=tId;
+  document.getElementById('modal-task-title').innerHTML = `Bearbeiten <button onclick="closeModal('modal-task')">×</button>`;
+  document.getElementById('modal-task-save-btn').textContent = 'Aktualisieren';
+  document.getElementById('task-text').value=t.text;
+  document.getElementById('task-prio').value=t.prio;
+  document.getElementById('task-date').value=t.date;
+  document.getElementById('task-person').value=t.person;
+  document.getElementById('task-note').value=t.note;
+  openModal('modal-task');
+}
+
+function addTask() {
+  const text = document.getElementById('task-text').value.trim();
+  if (!text) { document.getElementById('task-text').focus(); return; }
+  const ph = (data.phases[currentModule]||[]).find(p=>p.id===_addTaskPhaseId);
+  if (!ph) return;
+  const td = { text, prio:document.getElementById('task-prio').value, date:document.getElementById('task-date').value, person:document.getElementById('task-person').value.trim(), note:document.getElementById('task-note').value.trim(), done:false };
+  if (_editTaskId) { const t=ph.tasks.find(t=>t.id===_editTaskId); if(t) Object.assign(t,td); }
+  else ph.tasks.push({ id: getUniqueId('t'), ...td });
+  save(); closeModal('modal-task'); renderModule(currentModule);
+}
+
+function quickAddTask(e, mod, phId, input) {
+  if (e.key!=='Enter') return;
+  const text=input.value.trim(); if(!text) return;
+  const ph=(data.phases[mod]||[]).find(p=>p.id===phId);
+  if(ph){ 
+    ph.tasks.push({
+      id: getUniqueId('t'),
+      text,
+      prio:'mittel',
+      date:'',
+      person:'',
+      note:'',
+      done:false
+    }); 
+    save(); 
+    renderModule(mod); 
+  }
+}
+
+function showShareUrl() {
+  const url = window.getShareUrl ? window.getShareUrl() : window.location.href;
+  document.getElementById('share-url-input').value = url;
+  document.getElementById('copy-confirm').style.display = 'none';
+  openModal('modal-share');
+}
+
+function copyShareUrl() {
+  const input = document.getElementById('share-url-input');
+  navigator.clipboard.writeText(input.value).then(() => {
+    document.getElementById('copy-confirm').style.display = 'block';
+  }).catch(() => {
+    input.select(); document.execCommand('copy');
+    document.getElementById('copy-confirm').style.display = 'block';
+  });
+}
+
+function exportData() {
+  const stamp = new Date().toISOString().slice(0,10);
+  const blob = new Blob([JSON.stringify({name:currentSiteName,data}, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${currentSiteName.replace(/\s/g,'-')}-${stamp}.json`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-overlay').forEach(m=>{
+  m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');});
+});
+
+function fmtDate(d){if(!d)return'';const[y,m,day]=d.split('-');return`${day}.${m}.${y}`;}
+</script>
+</body>
+</html>
